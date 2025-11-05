@@ -11,7 +11,7 @@ try:
     MONGO_URL = os.environ.get("MONGO_URL")
     
     # --- Group ID အသစ် ပြောင်းလဲမှု ---
-    ADMIN_GROUP_IDS_STR = os.environ.get("ADMIN_GROUP_IDS", "-1003033780543,-1003211952085") # 's' ပါတဲ့ variable အသစ်ကို ယူ
+    ADMIN_GROUP_IDS_STR = os.environ.get("ADMIN_GROUP_IDS", "-1003033780543,-1003139605491") # 's' ပါတဲ့ variable အသစ်ကို ယူ
     
     if not all([BOT_TOKEN, ADMIN_ID, MONGO_URL, ADMIN_GROUP_IDS_STR]): # ADMIN_GROUP_ID အဟောင်းကို ဖြုတ်
         print("Error: Environment variables များ (BOT_TOKEN, ADMIN_ID, MONGO_URL, ADMIN_GROUP_IDS) မပြည့်စုံပါ။")

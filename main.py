@@ -3066,7 +3066,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📞 ***နံပါတ်:*** `{payment_num}`\n"
             f"👤 ***အမည်:*** {payment_acc_name}\n\n"
             f"⚠️ ***အရေးကြီးသော သတိပေးချက်:***\n"
-            f"***ငွေလွှဲ note/remark မှာ သင့်ရဲ့ {payment_name} အကောင့်နာမည်ကို ရေးပေးပါ။***\n\n"
+            f"***ငွေလွှဲ note မှာ shop လို့ရေးပေးပါ။***\n\n"
             f"💡 ***ငွေလွှဲပြီးရင် screenshot ကို ဒီမှာ တင်ပေးပါ။***\n"
             f"ℹ️ ***ပယ်ဖျက်ရန် /cancel နှိပ်ပါ။***",
             parse_mode="Markdown"

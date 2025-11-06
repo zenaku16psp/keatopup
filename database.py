@@ -257,7 +257,7 @@ def add_admin(admin_id):
         {"$addToSet": {"admins": int(admin_id)}},
         upsert=True
     )
-
+    
 def remove_admin(admin_id):
     if not client: return
     admins_collection.update_one(

@@ -28,6 +28,7 @@ try:
     auth_collection = db["authorized_users"]
     admins_collection = db["admins"]
     settings_collection = db["settings"]
+    pubg_prices_collection = db["pubg_prices"]
     # clone_bots_collection = db["clone_bots"] # <--- ဖြုတ်လိုက်ပါပြီ
 
     print("✅ MongoDB database နှင့် အောင်မြင်စွာ ချိတ်ဆက်ပြီးပါပြီ။")
@@ -47,7 +48,7 @@ def get_all_users():
     if not client: return []
     return list(users_collection.find({}))
 
-def create_user(user_id, name, username, referrer_id=None):
+def create_user(user_id, name, username, referrer_id=None): # <--- referrer_id=None ထည့်ပါ
     """User အသစ်ကို database တွင် ထည့်သွင်းပါ။ (Referral feature ပါ)"""
     if not client: return None
     user_data = {
@@ -89,8 +90,6 @@ def update_balance(user_id, amount_change):
         # upsert=True ကို ဖြုတ်လိုက်ပါ
     )
 
-#_____________________Dev Command ______________________#
-
 def set_balance(user_id, amount_to_set):
     """User ၏ balance ကို တန်ဖိုး အတိ (set) လုပ်ပါ။ (ပေါင်းတာ မဟုတ်)"""
     if not client: return None
@@ -99,8 +98,6 @@ def set_balance(user_id, amount_to_set):
         {"$set": {"balance": amount_to_set}}
         # upsert=True မလိုပါ၊ user က ရှိပြီးသားဖြစ်ရပါမယ်
     )
-
-#________________________Notic___________________________#
 
 def update_referral_earnings(user_id, commission_amount):
     if not client: return None
@@ -257,13 +254,15 @@ def add_admin(admin_id):
         {"$addToSet": {"admins": int(admin_id)}},
         upsert=True
     )
-    
+
 def remove_admin(admin_id):
     if not client: return
     admins_collection.update_one(
         {"_id": "admin_list"},
         {"$pull": {"admins": int(admin_id)}}
     )
+
+# --- Settings Collection Functions (For Render) ---
 
 # --- Settings Collection Functions (For Render) ---
 
@@ -360,11 +359,41 @@ def update_setting(key, value):
     except Exception as e:
         print(f"Failed to update setting '{key}': {e}")
 
-# --- (Clone Bot DB Functions များကို ဖြုတ်ထားပါသည်) ---
+def update_setting(key, value):
+    """
+    Setting တစ်ခုကို dot notation သုံးပြီး update လုပ်ပါ။
+    ဥပမာ: "payment_info.kpay_number"
+    """
+    if not client: return
+    try:
+        settings_collection.update_one(
+            {"_id": "global_config"},
+            {"$set": {key: value}},
+            upsert=True
+        )
+    except Exception as e:
+        print(f"Failed to update setting '{key}': {e}")
 
+#________________________________________________________________________#
+#__________________PUBG FUNCTION_______________________________________#
+# --- PUBG Price Functions ---
 
-# --- History & Data Wipe Functions ---
+def load_pubg_prices():
+    """PUBG UC ဈေးနှုန်းများကို DB မှ load လုပ်ပါ။"""
+    if not client: return {}
+    price_doc = pubg_prices_collection.find_one({"_id": "pubg_custom_prices"})
+    return price_doc.get("prices", {}) if price_doc else {}
 
+def save_pubg_prices(prices_dict):
+    """PUBG UC ဈေးနှုန်းများကို DB ထဲ သိမ်းပါ။"""
+    if not client: return
+    pubg_prices_collection.update_one(
+        {"_id": "pubg_custom_prices"},
+        {"$set": {"prices": prices_dict}},
+        upsert=True
+    )
+
+#_______________________________________________________________________#
 def clear_user_history(user_id):
     """
     User တစ်ယောက်၏ orders နှင့် topups list များကို ဖျက်ပြီး empty array [] အဖြစ် ပြန်ထားပါ။

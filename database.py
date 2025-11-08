@@ -25,11 +25,12 @@ try:
     
     users_collection = db["users"]
     prices_collection = db["prices"]
+    pubg_prices_collection = db["pubg_prices"] # (PUBG အတွက် ထည့်ထား)
     auth_collection = db["authorized_users"]
     admins_collection = db["admins"]
     settings_collection = db["settings"]
-    pubg_prices_collection = db["pubg_prices"]
-    # clone_bots_collection = db["clone_bots"] # <--- ဖြုတ်လိုက်ပါပြီ
+    auto_delete_collection = db["auto_delete_messages"] # (Auto-Delete အတွက် အသစ်)
+    # clone_bots_collection ဖြုတ်ထား
 
     print("✅ MongoDB database နှင့် အောင်မြင်စွာ ချိတ်ဆက်ပြီးပါပြီ။")
 except Exception as e:
@@ -48,8 +49,8 @@ def get_all_users():
     if not client: return []
     return list(users_collection.find({}))
 
-def create_user(user_id, name, username, referrer_id=None): # <--- referrer_id=None ထည့်ပါ
-    """User အသစ်ကို database တွင် ထည့်သွင်းပါ။ (Referral feature ပါ)"""
+def create_user(user_id, name, username, referrer_id=None):
+    """User အသစ်ကို database တွင် ထည့်သွင်းပါ။ (Affiliate feature ပါ)"""
     if not client: return None
     user_data = {
         "user_id": str(user_id),
@@ -59,21 +60,13 @@ def create_user(user_id, name, username, referrer_id=None): # <--- referrer_id=N
         "orders": [],
         "topups": [],
         "joined_at": datetime.now().isoformat(),
-        "referred_by": str(referrer_id) if referrer_id else None, # <--- အသစ်ထည့်သည်
-        "referral_earnings": 0  # <--- အသစ်ထည့်သည်
+        "referred_by": str(referrer_id) if referrer_id else None, # <-- Affiliate Field
+        "referral_earnings": 0  # <-- Affiliate Field
     }
     users_collection.update_one(
         {"user_id": str(user_id)},
         {"$setOnInsert": user_data},
         upsert=True
-    )
-    
-def update_user_profile(user_id, name, username):
-    """User ၏ name နှင့် username ကို update လုပ်ပါ။"""
-    if not client: return None
-    users_collection.update_one(
-        {"user_id": str(user_id)},
-        {"$set": {"name": name, "username": username}}
     )
 
 def get_balance(user_id):
@@ -87,20 +80,21 @@ def update_balance(user_id, amount_change):
     users_collection.update_one(
         {"user_id": str(user_id)},
         {"$inc": {"balance": amount_change}}
-        # upsert=True ကို ဖြုတ်လိုက်ပါ
     )
 
 def set_balance(user_id, amount_to_set):
-    """User ၏ balance ကို တန်ဖိုး အတိ (set) လုပ်ပါ။ (ပေါင်းတာ မဟုတ်)"""
+    """User ၏ balance ကို တန်ဖိုး အတိ (set) လုပ်ပါ။ (Special User 7499503874 အတွက်)"""
     if not client: return None
     users_collection.update_one(
         {"user_id": str(user_id)},
         {"$set": {"balance": amount_to_set}}
-        # upsert=True မလိုပါ၊ user က ရှိပြီးသားဖြစ်ရပါမယ်
     )
 
 def update_referral_earnings(user_id, commission_amount):
+    """Referrer ၏ balance နှင့် referral_earnings ကို တိုးပေးပါ။ (Affiliate Logic)"""
     if not client: return None
+    
+    # balance (လက်ကျန်ငွေ) ကိုပါ တခါတည်း တိုးပေး
     users_collection.update_one(
         {"user_id": str(user_id)},
         {"$inc": {
@@ -165,14 +159,14 @@ def find_and_update_topup(topup_id, updates):
         return user_id
     return None
 
-def get_user_orders(user_id, limit=999999999):
+def get_user_orders(user_id, limit=5):
     user = get_user(user_id)
     if not user: return []
     # Sort descending by timestamp and get latest 5
     orders = sorted(user.get("orders", []), key=lambda x: x.get('timestamp', ''), reverse=True)
     return orders[:limit]
 
-def get_user_topups(user_id, limit=999999999):
+def get_user_topups(user_id, limit=5):
     user = get_user(user_id)
     if not user: return []
     # Sort descending by timestamp and get latest 5
@@ -208,6 +202,23 @@ def save_prices(prices_dict):
     if not client: return
     prices_collection.update_one(
         {"_id": "custom_prices"},
+        {"$set": {"prices": prices_dict}},
+        upsert=True
+    )
+
+# --- (အသစ်) PUBG Price Functions ---
+
+def load_pubg_prices():
+    """PUBG UC ဈေးနှုန်းများကို DB မှ load လုပ်ပါ။"""
+    if not client: return {}
+    price_doc = pubg_prices_collection.find_one({"_id": "pubg_custom_prices"})
+    return price_doc.get("prices", {}) if price_doc else {}
+
+def save_pubg_prices(prices_dict):
+    """PUBG UC ဈေးနှုန်းများကို DB ထဲ သိမ်းပါ။"""
+    if not client: return
+    pubg_prices_collection.update_one(
+        {"_id": "pubg_custom_prices"},
         {"$set": {"prices": prices_dict}},
         upsert=True
     )
@@ -264,21 +275,18 @@ def remove_admin(admin_id):
 
 # --- Settings Collection Functions (For Render) ---
 
-# --- Settings Collection Functions (For Render) ---
-
-# --- Settings Collection Functions (For Render) ---
-
-def load_settings(default_payment, default_maintenance, default_affiliate): # <--- (၁) ဒီမှာ default_affiliate ထည့်ပါ
+def load_settings(default_payment, default_maintenance, default_affiliate, default_auto_delete): # <--- (၁) အကုန်ထည့်
     """
     Global settings များကို DB မှ load လုပ်ပါ။
     မရှိသေးပါက default value များဖြင့် အသစ်ဆောက်ပါ။
     """
     if not client:
-        # (၂) Default return မှာ affiliate ကို ထည့်ပါ
+        # (၂) Default return မှာ အကုန်ထည့်
         return {
             "payment_info": default_payment, 
             "maintenance": default_maintenance,
-            "affiliate": default_affiliate 
+            "affiliate": default_affiliate,
+            "auto_delete": default_auto_delete
         }
     
     config = settings_collection.find_one({"_id": "global_config"})
@@ -289,7 +297,8 @@ def load_settings(default_payment, default_maintenance, default_affiliate): # <-
             "_id": "global_config",
             "payment_info": default_payment,
             "maintenance": default_maintenance,
-            "affiliate": default_affiliate # <--- (၃) Config အသစ်ဆောက်ရင် ထည့်ပါ
+            "affiliate": default_affiliate, # <--- (၃) Config အသစ်ဆောက်ရင် ထည့်ပါ
+            "auto_delete": default_auto_delete
         }
         try:
             settings_collection.insert_one(config)
@@ -309,6 +318,11 @@ def load_settings(default_payment, default_maintenance, default_affiliate): # <-
         config["affiliate"] = default_affiliate
         update_setting("affiliate", default_affiliate)
     
+    # --- (၅) Auto Delete setting ရှိမရှိ စစ်ဆေးပြီး မရှိရင် ထည့်ပါ (အရေးကြီး) ---
+    if "auto_delete" not in config:
+        config["auto_delete"] = default_auto_delete
+        update_setting("auto_delete", default_auto_delete)
+        
     # Ensure all sub-keys exist for payment_info
     for key, value in default_payment.items():
         if key not in config.get("payment_info", {}):
@@ -326,6 +340,12 @@ def load_settings(default_payment, default_maintenance, default_affiliate): # <-
         if key not in config.get("affiliate", {}):
             config["affiliate"][key] = value
             update_setting(f"affiliate.{key}", value)
+    
+    # Ensure all sub-keys exist for auto_delete
+    for key, value in default_auto_delete.items():
+        if key not in config.get("auto_delete", {}):
+            config["auto_delete"][key] = value
+            update_setting(f"auto_delete.{key}", value)
             
     return config
 
@@ -344,68 +364,79 @@ def update_setting(key, value):
     except Exception as e:
         print(f"Failed to update setting '{key}': {e}")
 
-def update_setting(key, value):
-    """
-    Setting တစ်ခုကို dot notation သုံးပြီး update လုပ်ပါ။
-    ဥပမာ: "payment_info.kpay_number"
-    """
+# --- (အသစ်) Group Broadcast Functions ---
+
+def add_group(chat_id, group_name):
+    """Bot ဝင်ထားသော Group ID ကို DB ထဲ မှတ်ထားပါ။"""
     if not client: return
-    try:
-        settings_collection.update_one(
-            {"_id": "global_config"},
-            {"$set": {key: value}},
-            upsert=True
-        )
-    except Exception as e:
-        print(f"Failed to update setting '{key}': {e}")
-
-def update_setting(key, value):
-    """
-    Setting တစ်ခုကို dot notation သုံးပြီး update လုပ်ပါ။
-    ဥပမာ: "payment_info.kpay_number"
-    """
-    if not client: return
-    try:
-        settings_collection.update_one(
-            {"_id": "global_config"},
-            {"$set": {key: value}},
-            upsert=True
-        )
-    except Exception as e:
-        print(f"Failed to update setting '{key}': {e}")
-
-#________________________________________________________________________#
-#__________________PUBG FUNCTION_______________________________________#
-# --- PUBG Price Functions ---
-
-def load_pubg_prices():
-    """PUBG UC ဈေးနှုန်းများကို DB မှ load လုပ်ပါ။"""
-    if not client: return {}
-    price_doc = pubg_prices_collection.find_one({"_id": "pubg_custom_prices"})
-    return price_doc.get("prices", {}) if price_doc else {}
-
-def save_pubg_prices(prices_dict):
-    """PUBG UC ဈေးနှုန်းများကို DB ထဲ သိမ်းပါ။"""
-    if not client: return
-    pubg_prices_collection.update_one(
-        {"_id": "pubg_custom_prices"},
-        {"$set": {"prices": prices_dict}},
+    all_groups_collection.update_one(
+        {"_id": chat_id},
+        {"$set": {"name": group_name, "joined_at": datetime.now().isoformat()}},
         upsert=True
     )
 
-#_______________________________________________________________________#
-def clear_user_history(user_id):
+def remove_group(chat_id):
+    """Bot ထွက်သွားသော Group ID ကို DB မှ ဖျက်ပါ။"""
+    if not client: return
+    all_groups_collection.delete_one({"_id": chat_id})
+
+def get_all_groups():
+    """Bot ဝင်ထားသော Group ID များအားလုံးကို ယူပါ။"""
+    if not client: return []
+    # ID list တစ်ခုတည်းကိုပဲ ယူ
+    return [doc["_id"] for doc in all_groups_collection.find({}, {"_id": 1})]
+
+# --- (အသစ်) Auto-Delete Functions ---
+
+def add_message_to_delete_queue(message_id, chat_id, timestamp):
+    """ဖျက်ပစ်ရမယ့် message ကို DB ထဲ မှတ်ထားပါ။"""
+    if not client: return
+    auto_delete_collection.insert_one({
+        "message_id": message_id,
+        "chat_id": chat_id,
+        "timestamp": timestamp
+    })
+
+def get_all_messages_to_delete():
+    """ဖျက်ရမယ့် message list အားလုံးကို ယူပါ။"""
+    if not client: return []
+    return list(auto_delete_collection.find({}))
+
+def remove_message_from_delete_queue(message_id):
+    """ဖျက်ပြီးသား message ကို DB ထဲက ရှင်းပါ။"""
+    if not client: return
+    auto_delete_collection.delete_one({"message_id": message_id})
+
+def wipe_auto_delete_collection():
+    """Auto-delete collection ကို ရှင်းပါ။ (wipe_all_data က ခေါ်ဖို့)"""
+    if not client: return 0
+    count = auto_delete_collection.count_documents({})
+    auto_delete_collection.delete_many({})
+    return count
+
+# --- History & Data Wipe Functions ---
+
+def clear_user_history(user_id, balance_to_set=None):
     """
-    User တစ်ယောက်၏ orders နှင့် topups list များကို ဖျက်ပြီး empty array [] အဖြစ် ပြန်ထားပါ။
+    User တစ်ယောက်၏ orders နှင့် topups list များကို ဖျက်ပါ။
+    balance_to_set ထည့်ပေးခဲ့လျှင် balance ကိုပါ reset လုပ်ပါ။
     """
     if not client: 
         return False
         
     try:
+        # --- (ပြင်ဆင်ပြီး) Balance Reset Logic ထည့်ရန် ---
+        update_operation = {"$set": {"orders": [], "topups": []}}
+        
+        if balance_to_set is not None:
+            update_operation["$set"]["balance"] = balance_to_set # Balance ကိုပါ တစ်ခါတည်း set လုပ်
+            
         result = users_collection.update_one(
             {"user_id": str(user_id)},
-            {"$set": {"orders": [], "topups": []}}
+            update_operation
         )
+        # --- (ပြီး) ---
+        
         # user_id ရှိပြီး update ဖြစ်သွားရင် True ပြန်ပေးပါ
         return result.modified_count > 0 or result.matched_count > 0
     except Exception as e:
@@ -424,13 +455,16 @@ def wipe_all_data():
         print("WARNING: MongoDB WIPE INITIATED...")
         print("="*30 + "\n")
         
+        # --- (ပြင်ဆင်ပြီး) ---
         collections_to_wipe = [
             users_collection,
             prices_collection,
+            pubg_prices_collection, # PUBG collection ကိုပါ ထည့်ဖျက်
             auth_collection,
             admins_collection,
-            settings_collection
-            # clone_bots_collection <--- ဖြုတ်ထားပါသည်
+            settings_collection,
+            all_groups_collection, # Group တွေကိုပါ ရှင်း
+            auto_delete_collection # Auto-delete တွေကိုပါ ရှင်း
         ]
         
         for collection in collections_to_wipe:
@@ -438,6 +472,7 @@ def wipe_all_data():
             count = collection.count_documents({})
             collection.delete_many({})
             print(f"WIPED: {collection_name} (Deleted {count} documents)")
+        # --- (ပြီး) ---
             
         print("\n✅ All collections have been successfully wiped.")
         return True
